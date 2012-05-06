@@ -1,0 +1,109 @@
+#!/bin/bash
+#----------------------------------------------------------
+#
+# GATKS Runner Script
+#
+# This wrapper script acts as a wrapper to launch the 'real'
+# GATKS code which operates as a Java process.
+#
+# Author:  Simon Sadedin, ssadedin@gmail.com
+#----------------------------------------------------------
+
+# Version of Gatks - this should be 0.0.0 in the source tree,
+# it will be replaced by the build script at build time
+VERSION=0.0.0
+
+
+# Build date as an integer (unix epoch time)
+# This should be 0 in the source tree, 
+# it will be replaced by the build script at build time
+BUILDDATE=0
+
+# Default memory used
+# Mainly here to limit memory on systems with very large memory
+# as otherwise Java can default to extreme amounts (gigabytes)
+: ${MAX_JAVA_MEM:="1g"}
+
+: ${GATK_HOME:="$GATKS_HOME/gatk"}
+
+# if GATK is not where we hoped, have a look in the local directory
+if [ ! -e $GATK_HOME ];
+then
+  local_gatks=`ls -tc | grep GenomeAnalysisTK-`
+  if [ ! -z "$local_gatks" ];
+  then
+    GATK_HOME=`echo "$local_gatks" | head -1`
+  fi
+fi
+
+#----------------------------------------------------------
+# Compute a classpath for running the GATKS Java process
+# This path takes into account OS (so Cygwin gets a Windows
+# style path) and also recognizes when you are running in-situ
+# in the development tree so it will let classes from the
+# build directory override the jar files. 
+#----------------------------------------------------------
+get_classpath() {
+  LIB=$GATKS_HOME/lib
+  if [ -e $GATKS_HOME/local-lib ];
+  then
+    LIB="local-lib"
+  fi
+
+  for i in $LIB/*.jar;
+  do
+    CP=$CP:$i
+  done
+
+  CP="$CP:$GATK_HOME/GenomeAnalysisTK.jar"
+
+  # echo "$CP"
+
+  # In case we are running in place in the gatks project root, we pre-empt any other 
+  # classes with those from the build directory and the eclipse compile path
+  if [ -e $GATKS_HOME/eclipse-build/gatks/Runner.class ];
+  then
+    CP="$GATKS_HOME/eclipse-build:$CP"
+  elif [ -e $GATKS_HOME/build/classes/main ];
+  then
+    CP="$GATKS_HOME/build/classes/main:$CP"
+  fi
+
+  # Support for Cygwin: convert the class path to windows format 
+  if uname | grep -iq cygwin;
+  then
+     CP=`cygpath -pw "$CP"`
+  fi
+}
+
+# Locate Bpipe's home directory
+# Need something more sophisticated to deal with symbolic links?
+GATKS_HOME=`dirname $0`/..
+COMMAND="$1"
+TESTMODE=""
+
+if [ ! -e $GATK_HOME ];
+then
+        echo "Ooops ... "
+        echo 
+        echo "GATKS wasn't able to find GATK installed anywhere."
+        echo 
+        echo "You can fix this by setting an environment variable called GATK_HOME pointing at your GATK installation"
+        echo
+        exit 1
+fi
+
+get_classpath
+
+# Flag for debug mode 
+: ${GATKS_DEBUG:=false}
+
+# Run in the background with nohup so that jobs do not abort on logout
+# We pass the pid of this shell as a property.  This allows the bpipe runtime
+# to figure out its own process id which is otherwise hard to do in Java
+$GATKS_DEBUG && { 
+  echo "DEBUG: classpath=$CP"
+  echo "JAVA_MEM: $JAVA_MEM"
+}
+
+exec java -Xmx${MAX_JAVA_MEM} -classpath "$CP" -Dbpipe.pid=$$ -Dgatks.home="$GATKS_HOME" -Dgatks.version=$VERSION gatks.Runner $* 
