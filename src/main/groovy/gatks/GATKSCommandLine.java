@@ -169,8 +169,10 @@ public class GATKSCommandLine extends CommandLineGATK {
 				
 				annotatedWalker.addField(field);
 				
-				VCFHeaderInitializer vcfInit = new VCFHeaderInitializer(this);
-				this.injections.get("initializers").add(vcfInit);
+                if(config.containsKey("out")) {
+    				VCFHeaderInitializer vcfInit = new VCFHeaderInitializer(this);
+    				this.injections.get("initializers").add(vcfInit);
+                }
 			} 
 			catch (CannotCompileException e) {
 				throw new RuntimeException(e);
